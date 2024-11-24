@@ -1,0 +1,105 @@
+@BaseAddress = http://localhost:5093
+
+### Récupère toutes les configurations
+GET {{BaseAddress}}/getallconfig
+Accept: application/json
+
+###
+
+### Récupère la configuration SMTP
+GET {{BaseAddress}}/getsmtpconfig
+Accept: application/json
+
+###
+
+### Met à jour la configuration SMTP
+POST {{BaseAddress}}/setsmtpconfig
+Content-Type: application/json
+
+{
+  "SmtpServer": "smtp.example.com",
+  "SmtpPort": 587,
+  "Username": "user@example.com",
+  "Password": "password",
+  "FromEmail": "noreply@example.com"
+}
+
+###
+
+### Récupère la configuration des queues
+GET {{BaseAddress}}/getqueueconfig
+Accept: application/json
+
+###
+
+### Met à jour la configuration des queues
+POST {{BaseAddress}}/setqueueconfig
+Content-Type: application/json
+
+{
+  "QueueName": "defaultQueue",
+  "QueueType": "FIFO"
+}
+
+###
+
+### Récupère la configuration d'un dossier spécifique
+GET {{BaseAddress}}/getfolderconfig/{name}
+Accept: application/json
+
+###
+
+### Met à jour la configuration d'un dossier
+POST {{BaseAddress}}/setfolderconfig
+Content-Type: application/json
+
+{
+  "Path": "C:\\MonitoredFolder",
+  "SMBUsername": "smbUser",
+  "SMBPassword": "smbPass",
+  "SFTPServer": "sftp.example.com",
+  "SFTPPort": 22,
+  "SFTPUsername": "sftpUser",
+  "SFTPPassword": "sftpPass"
+}
+
+###
+
+### Supprime une configuration de dossier
+DELETE {{BaseAddress}}/deletefolderconfig/{name}
+Accept: application/json
+
+###
+
+### Ajoute une nouvelle configuration de dossier
+POST {{BaseAddress}}/addfolderconfig
+Content-Type: application/json
+
+{
+  "Path": "C:\\NewFolder",
+  "SMBUsername": "newSmbUser",
+  "SMBPassword": "newSmbPass",
+  "SFTPServer": "new-sftp.example.com",
+  "SFTPPort": 22,
+  "SFTPUsername": "newSftpUser",
+  "SFTPPassword": "newSftpPass"
+}
+
+###
+
+### Démarre un Watcher pour un dossier spécifique
+POST {{BaseAddress}}/startfolderwatcher/{name}
+Accept: application/json
+
+###
+
+### Arrête un Watcher pour un dossier spécifique
+POST {{BaseAddress}}/stopfolderwatcher/{name}
+Accept: application/json
+
+###
+
+### Redémarre un Watcher pour un dossier spécifique
+POST {{BaseAddress}}/restartfolderwatcher/{name}
+Accept: application/json
+
