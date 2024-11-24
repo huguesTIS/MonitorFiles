@@ -14,7 +14,7 @@ using System.Reflection;
 [assembly: System.Reflection.AssemblyCompanyAttribute("Watch2sftp.Core")]
 [assembly: System.Reflection.AssemblyConfigurationAttribute("Debug")]
 [assembly: System.Reflection.AssemblyFileVersionAttribute("1.0.0.0")]
-[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0")]
+[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+7c9030032100c33cbb03657d1bd83f52dc04d8b8")]
 [assembly: System.Reflection.AssemblyProductAttribute("Watch2sftp.Core")]
 [assembly: System.Reflection.AssemblyTitleAttribute("Watch2sftp.Core")]
 [assembly: System.Reflection.AssemblyVersionAttribute("1.0.0.0")]

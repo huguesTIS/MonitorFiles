@@ -11,9 +11,13 @@ builder.Services.ConfigureHttpJsonOptions(options =>
 // exécution comme service Windows
 builder.Host.UseWindowsService();
 // Ajout des services nécessaires
+builder.Services.AddSingleton<IEventQueue, EventQueue>(); // File d'événements
+builder.Services.AddSingleton<IMonitorFactory, MonitorFactory>(); // Usine de monitors
 builder.Services.AddSingleton<JobConfigurationService> (); // Contient les configurations globales
 builder.Services.AddSingleton<PathValidatorService>(); // verifie que les chemins definie dans la config sont valid et accessibles
 builder.Services.AddHostedService<JobMangerBackgroundService>(); // Service Windows
+
+
 
 var app = builder.Build();
 // API Minimal pour gerer les configurations et le jobManager

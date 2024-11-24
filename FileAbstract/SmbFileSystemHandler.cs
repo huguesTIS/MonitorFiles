@@ -1,6 +1,4 @@
-﻿using Watch2sftp.Core.Utils;
-
-namespace Watch2sftp.Core.FileAbstract;
+﻿namespace Watch2sftp.Core.FileAbstract;
 
 public class SmbFileSystemHandler : IFileSystemHandler
 {

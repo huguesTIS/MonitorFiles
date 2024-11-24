@@ -1,23 +1,27 @@
-﻿namespace Watch2sftp.Core.Monitor;
-
-public class MonitorFactory : IMonitorFactory
+﻿public class MonitorFactory : IMonitorFactory
 {
     private readonly IServiceProvider _serviceProvider;
-    private readonly IDictionary<string, Func<Job, ILogger, IServiceProvider, IMonitor>> _monitorCreators;
+    private readonly IDictionary<string, Func<Job, IServiceProvider, IMonitor>> _monitorCreators;
 
     public MonitorFactory(IServiceProvider serviceProvider)
     {
         _serviceProvider = serviceProvider;
 
-        _monitorCreators = new Dictionary<string, Func<Job, ILogger, IServiceProvider, IMonitor>>
+        _monitorCreators = new Dictionary<string, Func<Job, IServiceProvider, IMonitor>>
         {
-            { "file", (job, logger, sp) => new LocalFileMonitor(job, logger) },
-           // { "smb", (job logger, sp) => new SmbMonitor(source) },
-           // { "sftp", (job, logger, sp) => new SftpMonitor(source) }
+            { "file", (job, sp) =>
+                new LocalFileMonitor(
+                    job,
+                    sp.GetRequiredService<IEventQueue>(), // Résolution de la file d'événements
+                    sp.GetRequiredService<ILogger<LocalFileMonitor>>() // Résolution du logger
+                )
+            },
+            // { "smb", (job, sp) => new SmbMonitor(job) },
+            // { "sftp", (job, sp) => new SftpMonitor(job) }
         };
     }
 
-    public IMonitor CreateMonitor(Job job, ILogger logger)
+    public IMonitor CreateMonitor(Job job)
     {
         var uri = new Uri(job.Source.Path);
 
@@ -26,7 +30,6 @@ public class MonitorFactory : IMonitorFactory
             throw new NotSupportedException($"Protocol '{uri.Scheme}' is not supported.");
         }
 
-        return creator(job, logger, _serviceProvider);
+        return creator(job, _serviceProvider);
     }
 }
-

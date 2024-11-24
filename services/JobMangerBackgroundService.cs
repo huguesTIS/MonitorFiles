@@ -6,6 +6,7 @@ public class JobMangerBackgroundService : BackgroundService, IDisposable
     private readonly JobConfigurationService _configService;
     private readonly PathValidatorService _pathValidator;
     private readonly ILogger<JobMangerBackgroundService> _logger;
+    private readonly MonitorFactory _monitorFactory;
 
     // Utilisation d un dictionnaire thread-safe pour stocker les tokens et Monitors
     private readonly ConcurrentDictionary<string, (CancellationTokenSource TokenSource, IMonitor Monitor)> _jobMonitors = new();
@@ -13,11 +14,13 @@ public class JobMangerBackgroundService : BackgroundService, IDisposable
     public JobMangerBackgroundService(
         JobConfigurationService configService,
         PathValidatorService pathValidator,
-        ILogger<JobMangerBackgroundService> logger)
+        ILogger<JobMangerBackgroundService> logger,
+        MonitorFactory monitorFactory)
     {
         _configService = configService;
         _pathValidator = pathValidator;
         _logger = logger;
+        _monitorFactory = monitorFactory;
     }
 
     /// <summary>
@@ -104,7 +107,7 @@ public class JobMangerBackgroundService : BackgroundService, IDisposable
 
         // Cree un Monitor pour le job
         var cts = new CancellationTokenSource();
-        var Monitor = MonitorFactory.CreateMonitor(job, _logger);
+        var Monitor = _monitorFactory.CreateMonitor(job);
 
         // Stocke le Monitor et le token
         if (_jobMonitors.TryAdd(job.Name, (cts, Monitor)))

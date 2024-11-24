@@ -4,16 +4,19 @@ public class LocalFileMonitor : IMonitor
 {
     private FileSystemWatcher _watcher;
     private readonly ILogger _logger;
-    private readonly Job job;
+    private readonly Job _job;
+    private IEventQueue _eventQueue;
 
-    public LocalFileMonitor(Job job, ILogger logger)
+    public LocalFileMonitor(Job job, IEventQueue eventQueue, ILogger logger)
     {
+        _eventQueue = eventQueue ?? throw new ArgumentNullException(nameof(eventQueue));
+        _job = job ?? throw new ArgumentNullException(nameof(job));
+        _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         _watcher = new FileSystemWatcher(job.Source.Path)
         {
             EnableRaisingEvents = false,
             IncludeSubdirectories = true
         };
-        _logger = logger;
     }
 
     public Task StartAsync(CancellationToken cancellationToken)
@@ -32,32 +35,39 @@ public class LocalFileMonitor : IMonitor
         {
             _watcher.Created -= OnFileEvent;
             _watcher.Changed -= OnFileEvent;
-
         }
-        _logger.LogInformation("LocalFileWatcher disposed.");
+
+        _logger.LogInformation("LocalFileWatcher stopped.");
         return Task.CompletedTask;
     }
+
     public Task<bool> IsConnectedAsync()
     {
-        // Toujours connecte pour un chemin local
+        // Toujours connecté pour un chemin local
         return Task.FromResult(true);
     }
 
+    private void OnFileEvent(object sender, FileSystemEventArgs e)
+    {
+        _logger.LogInformation($"File event detected: {e.FullPath} ({e.ChangeType})");
+
+        // Appel à une méthode asynchrone pour le traitement
+        _ = HandleFileEventAsync(e);
+    }
+
+    private async Task HandleFileEventAsync(FileSystemEventArgs e)
+    {
+        await _eventQueue.EnqueueAsync(new FileEvent(e.FullPath, DateTime.Now, e.ChangeType.ToString(), _job), CancellationToken.None);
+    }
 
     public void SetEventQueue(IEventQueue eventQueue)
     {
-        _eventQueue = eventQueue;
-    }
-
-    private async Task OnFileEvent(object sender, FileSystemEventArgs e)
-    {
-        _logger.LogInformation($"File event detected: {e.FullPath} ({e.ChangeType})");
-        await _eventQueue?.EnqueueAsync(new FileEvent(e.FullPath, DateTime.Now, e.ChangeType.ToString(),job));
+        _eventQueue = eventQueue ?? throw new ArgumentNullException(nameof(eventQueue));
     }
 
     public void Dispose()
     {
-        _watcher.Dispose();
+        _watcher?.Dispose();
         _watcher = null;
     }
 }
