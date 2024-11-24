@@ -11,7 +11,7 @@ public class PathValidatorService
         _factory = factory;
     }
 
-    public bool ValidateSource(SourcePath source)
+    public async Task<bool> ValidateSourceAsync(SourcePath source, CancellationToken cancellationToken)
     {
         if (!IsProtocolSupported(source.Path))
         {
@@ -19,7 +19,7 @@ public class PathValidatorService
             return false;
         }
 
-        if (!IsAccessible(source.Path))
+        if (!await IsAccessibleAsync(source.Path, cancellationToken))
         {
             _logger.LogError($"Path not accessible: {source.Path}");
             return false;
@@ -28,7 +28,7 @@ public class PathValidatorService
         return true;
     }
 
-    public bool ValidateDestination(DestinationPath destination)
+    public async Task<bool> ValidateDestinationAsync(DestinationPath destination, CancellationToken cancellationToken)
     {
         if (!IsProtocolSupported(destination.Path))
         {
@@ -36,7 +36,7 @@ public class PathValidatorService
             return false;
         }
 
-        if (!IsAccessible(destination.Path))
+        if (!await IsAccessibleAsync(destination.Path, cancellationToken))
         {
             _logger.LogError($"Path not accessible: {destination.Path}");
             return false;
@@ -50,20 +50,17 @@ public class PathValidatorService
         return path.StartsWith("file://") || path.StartsWith("smb://") || path.StartsWith("sftp://");
     }
 
-    private bool IsAccessible(string path)
+    private async Task<bool> IsAccessibleAsync(string path, CancellationToken cancellationToken)
     {
         try
         {
             var handler = _factory.CreateHandler(path);
-            return handler.DirectoryExistsAsync(path).Result;
+            return await handler.ExistsAsync(path, cancellationToken);
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, $"Error checking accessibility for path: {path}");
+            return false;
         }
-
-        return false;
     }
 }
-
-

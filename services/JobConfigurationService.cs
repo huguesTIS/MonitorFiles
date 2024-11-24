@@ -11,36 +11,38 @@ public class JobConfigurationService
     {
         _validator = validator;
         _logger = logger;
-        LoadConfig();
-        ValidateConfig();
     }
 
     public JobConfiguration GetConfiguration() => _config;
 
-    public JobConfiguration GetDefauktConfiguration()
+    public JobConfiguration GetDefaultConfiguration()
     {
-        var config = new JobConfiguration()
+        var config = new JobConfiguration
         {
-            Jobs = [
-               new() {
-                       Name = "Job 1",
-                       Description = "Description du job 1",
-                       Enabled = true,
-                       Source = new SourcePath() {
-                           Path = @"file://C:/Users/groshugo/Downloads",
-                           Description="Description du job 1"
-                            },
-                       Destinations = [
-                           new() {
-                               Path = @"sftp://127.0.0.1:22@user1:password//server/share",
-                               Description = "Description du job 1",
-                               Mode = "Push",
-                               FileFilter = "*.*"
-                               }],
-                        Options = new JobOptions() { RetryCount = 3, InitialDelayMs = 5000 }
-                     }
-           ]
+            Jobs = new List<Job>
+            {
+                new()
+                {
+                    Name = "Job 1",
+                    Description = "Description du job 1",
+                    Enabled = true,
+                    Source = new SourcePath
+                    {
+                        Path = @"file://C:/Users/groshugo/Downloads",
+                        Description = "Description du job 1"
+                    },
+                    Destination = new DestinationPath
+                    {
+                        Path = @"sftp://127.0.0.1:22@user1:password//server/share",
+                        Description = "Description du job 1",
+                        Mode = MonitorMode.Move,
+                        FileFilter = "*.*"
+                    },
+                    Options = new JobOptions { RetryCount = 3, InitialDelayMs = 5000 }
+                }
+            }
         };
+
         SaveConfiguration(config);
         return config;
     }
@@ -51,45 +53,43 @@ public class JobConfigurationService
         File.WriteAllText(ConfigFilePath, JsonSerializer.Serialize(config, AppJsonContext.Default.JobConfiguration));
     }
 
-    private void LoadConfig()
+    public async Task LoadConfigAsync(CancellationToken cancellationToken)
     {
         if (File.Exists(ConfigFilePath))
         {
             _config = JsonSerializer.Deserialize(
                 File.ReadAllText(ConfigFilePath),
                 AppJsonContext.Default.JobConfiguration
-            ) ?? GetDefauktConfiguration();
+            ) ?? GetDefaultConfiguration();
         }
         else
         {
-            _config = GetDefauktConfiguration();
+            _config = GetDefaultConfiguration();
         }
+
+        await ValidateConfigAsync(cancellationToken);
     }
 
-    private void ValidateConfig()
+    private async Task ValidateConfigAsync(CancellationToken cancellationToken)
     {
         foreach (var job in _config.Jobs)
         {
             if (!job.Enabled)
                 continue;
 
-            if (!_validator.ValidateSource(job.Source))
+            var isSourceValid = await _validator.ValidateSourceAsync(job.Source, cancellationToken);
+            if (!isSourceValid)
             {
                 _logger.LogError($"Invalid source path for job: {job.Name}");
-                job.Enabled = false; // Desactiver le job
+                job.Enabled = false; // Désactiver le job
             }
 
-            foreach (var destination in job.Destinations)
+            var isDestinationValid = await _validator.ValidateDestinationAsync(job.Destination, cancellationToken);
+            if (!isDestinationValid)
             {
-                if (!_validator.ValidateDestination(destination))
-                {
-                    _logger.LogError($"Invalid destination path for job: {job.Name}");
-                    job.Enabled = false; // Desactiver le job
-                }
+                _logger.LogError($"Invalid destination path for job: {job.Name}");
+                job.Enabled = false; // Désactiver le job
             }
         }
     }
 }
-
-
-

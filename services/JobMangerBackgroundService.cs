@@ -1,21 +1,20 @@
 ﻿namespace Watch2sftp.Core.services;
 
-
-public class JobMangerBackgroundService : BackgroundService, IDisposable
+public class JobManagerBackgroundService : BackgroundService, IDisposable
 {
     private readonly JobConfigurationService _configService;
     private readonly PathValidatorService _pathValidator;
-    private readonly ILogger<JobMangerBackgroundService> _logger;
-    private readonly MonitorFactory _monitorFactory;
+    private readonly ILogger<JobManagerBackgroundService> _logger;
+    private readonly IMonitorFactory _monitorFactory;
 
-    // Utilisation d un dictionnaire thread-safe pour stocker les tokens et Monitors
+    // Utilisation d'un dictionnaire thread-safe pour stocker les tokens et Monitors
     private readonly ConcurrentDictionary<string, (CancellationTokenSource TokenSource, IMonitor Monitor)> _jobMonitors = new();
 
-    public JobMangerBackgroundService(
+    public JobManagerBackgroundService(
         JobConfigurationService configService,
         PathValidatorService pathValidator,
-        ILogger<JobMangerBackgroundService> logger,
-        MonitorFactory monitorFactory)
+        ILogger<JobManagerBackgroundService> logger,
+        IMonitorFactory monitorFactory)
     {
         _configService = configService;
         _pathValidator = pathValidator;
@@ -24,23 +23,24 @@ public class JobMangerBackgroundService : BackgroundService, IDisposable
     }
 
     /// <summary>
-    /// Methode principale executee par le service Windows
+    /// Méthode principale exécutée par le service Windows.
     /// </summary>
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
         _logger.LogInformation("JobManager service started.");
         try
         {
-            // Verifie et demarre les jobs
-            StartAllJobs();
+            // Charge la configuration et démarre les jobs
+            await _configService.LoadConfigAsync(stoppingToken);
+            await StartAllJobsAsync(stoppingToken);
 
-            // Boucle principale pour surveiller les mises a jour ou reconnections
+            // Boucle principale pour surveiller les mises à jour ou reconnections
             while (!stoppingToken.IsCancellationRequested)
             {
                 await Task.Delay(TimeSpan.FromSeconds(30), stoppingToken);
 
                 // Reconnexion et reprise des jobs
-                await CheckAndReconnectJobs(stoppingToken);
+                await CheckAndReconnectJobsAsync(stoppingToken);
             }
         }
         catch (OperationCanceledException)
@@ -54,20 +54,20 @@ public class JobMangerBackgroundService : BackgroundService, IDisposable
     }
 
     /// <summary>
-    /// Demarre tous les jobs valides depuis la configuration
+    /// Démarre tous les jobs valides depuis la configuration.
     /// </summary>
-    public void StartAllJobs()
+    public async Task StartAllJobsAsync(CancellationToken stoppingToken)
     {
         var jobs = _configService.GetConfiguration().Jobs.Where(j => j.Enabled);
 
         foreach (var job in jobs)
         {
-            StartJob(job);
+            await StartJobAsync(job, stoppingToken);
         }
     }
 
     /// <summary>
-    /// Arrete tous les jobs et libere les ressources
+    /// Arrête tous les jobs et libère les ressources.
     /// </summary>
     public void StopAllJobs()
     {
@@ -78,18 +78,18 @@ public class JobMangerBackgroundService : BackgroundService, IDisposable
     }
 
     /// <summary>
-    /// Redemarre tous les jobs
+    /// Redémarre tous les jobs.
     /// </summary>
-    public void RestartAllJobs()
+    public async Task RestartAllJobsAsync(CancellationToken stoppingToken)
     {
         StopAllJobs();
-        StartAllJobs();
+        await StartAllJobsAsync(stoppingToken);
     }
 
     /// <summary>
-    /// Demarre un job specifique
+    /// Démarre un job spécifique.
     /// </summary>
-    private void StartJob(Job job)
+    private async Task StartJobAsync(Job job, CancellationToken stoppingToken)
     {
         if (_jobMonitors.ContainsKey(job.Name))
         {
@@ -97,28 +97,28 @@ public class JobMangerBackgroundService : BackgroundService, IDisposable
             return;
         }
 
-        // Verifie que les chemins source et destination sont valides
-        if (!_pathValidator.ValidateSource(job.Source) ||
-            job.Destinations.Any(d => !_pathValidator.ValidateDestination(d)))
+        // Valide les chemins source et destination de manière asynchrone
+        if (!await _pathValidator.ValidateSourceAsync(job.Source, stoppingToken) ||
+            !await _pathValidator.ValidateDestinationAsync(job.Destination, stoppingToken))
         {
             _logger.LogError($"Job {job.Name} has invalid paths. Skipping.");
             return;
         }
 
-        // Cree un Monitor pour le job
-        var cts = new CancellationTokenSource();
-        var Monitor = _monitorFactory.CreateMonitor(job);
+        // Crée un Monitor pour le job
+        var cts = CancellationTokenSource.CreateLinkedTokenSource(stoppingToken);
+        var monitor = _monitorFactory.CreateMonitor(job);
 
         // Stocke le Monitor et le token
-        if (_jobMonitors.TryAdd(job.Name, (cts, Monitor)))
+        if (_jobMonitors.TryAdd(job.Name, (cts, monitor)))
         {
             _logger.LogInformation($"Starting job: {job.Name}");
-            Task.Run(() => Monitor.StartAsync(cts.Token), cts.Token);
+            _ = Task.Run(() => monitor.StartAsync(cts.Token), cts.Token);
         }
     }
 
     /// <summary>
-    /// Arrete un job specifique
+    /// Arrête un job spécifique.
     /// </summary>
     private void StopJob(string jobName)
     {
@@ -131,9 +131,9 @@ public class JobMangerBackgroundService : BackgroundService, IDisposable
     }
 
     /// <summary>
-    /// Verifie les jobs pour détecter les deconnexions et tenter de les reconnecter
+    /// Vérifie les jobs pour détecter les déconnexions et tente de les reconnecter.
     /// </summary>
-    private async Task CheckAndReconnectJobs(CancellationToken stoppingToken)
+    private async Task CheckAndReconnectJobsAsync(CancellationToken stoppingToken)
     {
         foreach (var jobName in _jobMonitors.Keys)
         {
@@ -148,7 +148,7 @@ public class JobMangerBackgroundService : BackgroundService, IDisposable
                     var job = _configService.GetConfiguration().Jobs.FirstOrDefault(j => j.Name == jobName);
                     if (job != null)
                     {
-                        StartJob(job);
+                        await StartJobAsync(job, stoppingToken);
                     }
                 }
             }
@@ -161,4 +161,3 @@ public class JobMangerBackgroundService : BackgroundService, IDisposable
         base.Dispose();
     }
 }
-

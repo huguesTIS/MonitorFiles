@@ -2,32 +2,48 @@
 
 public class LocalFileSystemHandler : IFileSystemHandler
 {
-    public Task<bool> FileExistsAsync(string path)
+    public async Task DeleteAsync(string path, CancellationToken cancellationToken)
     {
-        return Task.FromResult(File.Exists(path));
+        if (File.Exists(path))
+        {
+            File.Delete(path);
+        }
+        await Task.CompletedTask;
     }
 
-    public Task<bool> DirectoryExistsAsync(string path)
+    public async Task<bool> ExistsAsync(string path, CancellationToken cancellationToken)
     {
-        return Task.FromResult(Directory.Exists(path));
+        return await Task.FromResult(File.Exists(path));
     }
 
-    public Task UploadFileAsync(string source, string destination)
+    public async Task<Stream> OpenReadAsync(string path, CancellationToken cancellationToken)
     {
-        File.Copy(source, destination, true);
-        return Task.CompletedTask;
+        if (!File.Exists(path))
+        {
+            throw new FileNotFoundException($"File not found: {path}");
+        }
+
+        return await Task.FromResult(File.OpenRead(path));
     }
 
-    public Task DeleteFileAsync(string path)
+    public async Task WriteAsync(string path, Stream data, CancellationToken cancellationToken)
     {
-        File.Delete(path);
-        return Task.CompletedTask;
+        using var fileStream = File.Create(path);
+        await data.CopyToAsync(fileStream, cancellationToken);
     }
 
-    public Task<Stream> OpenFileAsync(string path, FileAccess access)
+    public bool IsFileLocked(string path)
     {
-        var stream = new FileStream(path, FileMode.Open, access);
-        return Task.FromResult((Stream)stream);
+        try
+        {
+            using var stream = File.Open(path, FileMode.Open, FileAccess.ReadWrite, FileShare.None);
+            return false;
+        }
+        catch (IOException)
+        {
+            return true;
+        }
     }
 }
+
 

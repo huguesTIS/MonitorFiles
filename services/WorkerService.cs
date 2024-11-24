@@ -4,17 +4,19 @@ public class WorkerService : BackgroundService
 {
     private readonly IEventQueue _eventQueue;
     private readonly ILogger<WorkerService> _logger;
-    private readonly FileSystemHandlerFactory _fileSystemHandlerFactory;
-    private readonly ConcurrentDictionary<string, int> _retryCounts = new();
+    private readonly FileEventProcessor _fileEventProcessor;
     private const int MaxRetries = 3;
-    private const int QueueThreshold = 10; // Seuil pour lancer des workers supplementaires
+    private const int QueueThreshold = 10; // Seuil pour ajuster les workers
     private int _activeWorkers = 1; // Nombre initial de workers
 
-    public WorkerService(IEventQueue eventQueue, ILogger<WorkerService> logger, FileSystemHandlerFactory fileSystemHandlerFactory)
+    public WorkerService(
+        IEventQueue eventQueue,
+        ILogger<WorkerService> logger,
+        FileEventProcessor fileEventProcessor)
     {
         _eventQueue = eventQueue;
         _logger = logger;
-        _fileSystemHandlerFactory = fileSystemHandlerFactory;
+        _fileEventProcessor = fileEventProcessor;
     }
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
@@ -43,7 +45,7 @@ public class WorkerService : BackgroundService
                 await ProcessEventAsync(fileEvent, stoppingToken);
             }
 
-            // Verifier la taille de la queue et ajuster le nombre de workers
+            // Ajuster dynamiquement le nombre de workers en fonction de la queue
             if (_eventQueue.QueueCount > QueueThreshold && _activeWorkers < Environment.ProcessorCount)
             {
                 _activeWorkers++;
@@ -55,42 +57,31 @@ public class WorkerService : BackgroundService
 
     private async Task ProcessEventAsync(FileEvent fileEvent, CancellationToken stoppingToken)
     {
-        _logger.LogInformation($"Processing event: {fileEvent.FilePath} ({fileEvent.EventType})");
-
         try
         {
-            var handler = _fileSystemHandlerFactory.CreateHandler(fileEvent.JobConfiguration.Source.Path);
-            await handler.UploadFileAsync(fileEvent.FilePath, fileEvent.JobConfiguration.Destinations[0].Path);
-            _logger.LogInformation($"Processed event: {fileEvent.FilePath} ({fileEvent.EventType})");
-            _retryCounts.TryRemove(fileEvent.FilePath, out _);
+            _logger.LogInformation($"Processing event: {fileEvent.FilePath} ({fileEvent.EventType})");
+
+            await _fileEventProcessor.ProcessFileEventAsync(fileEvent, stoppingToken);
+
+            _logger.LogInformation($"Processed event successfully: {fileEvent.FilePath} ({fileEvent.EventType})");
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, $"Failed to process event: {fileEvent.FilePath} ({fileEvent.EventType})");
 
-            // Mecanisme de retry
-            if (_retryCounts.TryGetValue(fileEvent.FilePath, out var retryCount))
+            fileEvent.RetryCount++;
+
+            if (fileEvent.RetryCount < MaxRetries)
             {
-                if (retryCount < MaxRetries)
-                {
-                    _retryCounts[fileEvent.FilePath] = retryCount + 1;
-                    _logger.LogInformation($"Retrying event: {fileEvent.FilePath} ({fileEvent.EventType}), attempt {retryCount + 1}");
-                    await Task.Delay(TimeSpan.FromSeconds(5 * retryCount), stoppingToken); // Delai avant de réessayer
-                    await _eventQueue.EnqueueAsync(fileEvent, stoppingToken); // Reenfiler l evenement
-                }
-                else
-                {
-                    _logger.LogError($"Max retries reached for event: {fileEvent.FilePath} ({fileEvent.EventType})");
-                    _retryCounts.TryRemove(fileEvent.FilePath, out _);
-                }
+                _logger.LogInformation($"Retrying event: {fileEvent.FilePath} ({fileEvent.EventType}), attempt {fileEvent.RetryCount}");
+                await Task.Delay(TimeSpan.FromSeconds(5 * fileEvent.RetryCount), stoppingToken); // Delai exponentiel
+                await _eventQueue.EnqueueAsync(fileEvent, stoppingToken); // Réenfiler l'événement
             }
             else
             {
-                _retryCounts[fileEvent.FilePath] = 1;
-                _logger.LogInformation($"Retrying event: {fileEvent.FilePath} ({fileEvent.EventType}), attempt 1");
-                await Task.Delay(TimeSpan.FromSeconds(5), stoppingToken); // Delai avant de reessayer
-                await _eventQueue.EnqueueAsync(fileEvent, stoppingToken); // Reenfiler l'evenement
+                _logger.LogError($"Max retries reached for event: {fileEvent.FilePath} ({fileEvent.EventType}). Discarding event.");
             }
         }
     }
 }
+

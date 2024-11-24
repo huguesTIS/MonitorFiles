@@ -19,7 +19,7 @@ builder.Services.AddTransient<IFileEventHandler, FileDeletedHandler>();
 builder.Services.AddSingleton<FileEventProcessor>();
 builder.Services.AddSingleton<JobConfigurationService> (); // Contient les configurations globales
 builder.Services.AddSingleton<PathValidatorService>(); // verifie que les chemins definie dans la config sont valid et accessibles
-builder.Services.AddHostedService<JobManagerBackgroundService>(); // Service Windows
+builder.Services.AddHostedService<JobMangerBackgroundService>(); // Service Windows
 builder.Services.AddLogging(); // Ajout du logging
 
 

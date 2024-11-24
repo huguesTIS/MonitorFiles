@@ -1,11 +1,13 @@
 ﻿namespace Watch2sftp.Core.FileAbstract;
 
+
 public interface IFileSystemHandler
 {
-    Task<bool> FileExistsAsync(string path);
-    Task<bool> DirectoryExistsAsync(string path);
-    Task UploadFileAsync(string source, string destination);
-    Task DeleteFileAsync(string path);
-    Task<Stream> OpenFileAsync(string path, FileAccess access);
+    Task DeleteAsync(string path, CancellationToken cancellationToken);
+    Task<bool> ExistsAsync(string path, CancellationToken cancellationToken);
+    Task<Stream> OpenReadAsync(string path, CancellationToken cancellationToken);
+    Task WriteAsync(string path, Stream data, CancellationToken cancellationToken);
+    bool IsFileLocked(string path);
 }
+
 

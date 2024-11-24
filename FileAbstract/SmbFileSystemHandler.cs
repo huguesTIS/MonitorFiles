@@ -1,55 +1,10 @@
-﻿namespace Watch2sftp.Core.FileAbstract;
-
-public class SmbFileSystemHandler : IFileSystemHandler
+﻿public class SmbFileSystemHandler : IFileSystemHandler
 {
     private readonly NetworkCredential _credentials;
 
-    public SmbFileSystemHandler(string host, string username, string password, string domain = ".")
+    public SmbFileSystemHandler(NetworkCredential credentials = null)
     {
-        _credentials = new NetworkCredential(username, password, domain);
-    }
-
-    public async Task<bool> FileExistsAsync(string path)
-    {
-        return await RunImpersonatedAsync(async () =>
-        {
-            return File.Exists(path);
-        });
-    }
-
-    public async Task UploadFileAsync(string source, string destination)
-    {
-        await RunImpersonatedAsync(async () =>
-        {
-            File.Copy(source, destination, overwrite: true);
-            return Task.CompletedTask;
-        });
-    }
-
-    public async Task DeleteFileAsync(string path)
-    {
-        await RunImpersonatedAsync(async () =>
-        {
-            File.Delete(path);
-            return Task.CompletedTask;
-        });
-    }
-
-    public async Task<Stream> OpenFileAsync(string path, FileAccess access)
-    {
-        return await RunImpersonatedAsync(() =>
-        {
-            var fileStream = new FileStream(path, FileMode.Open, access);
-            return Task.FromResult<Stream>(fileStream);
-        });
-    }
-
-    public async Task<bool> DirectoryExistsAsync(string path)
-    {
-        return await RunImpersonatedAsync(async () =>
-        {
-            return Directory.Exists(path);
-        });
+        _credentials = credentials;
     }
 
     private async Task<T> RunImpersonatedAsync<T>(Func<Task<T>> action)
@@ -65,5 +20,72 @@ public class SmbFileSystemHandler : IFileSystemHandler
             _credentials.Domain);
 
         return await WindowsIdentity.RunImpersonated(identity.AccessToken, action);
+    }
+
+    private async Task RunImpersonatedAsync(Func<Task> action)
+    {
+        await RunImpersonatedAsync(async () =>
+        {
+            await action();
+            return true; // Dummy return for void methods
+        });
+    }
+
+    public async Task DeleteAsync(string path, CancellationToken cancellationToken)
+    {
+        await RunImpersonatedAsync(async () =>
+        {
+            if (File.Exists(path))
+            {
+                File.Delete(path);
+            }
+            return Task.CompletedTask;
+        });
+    }
+
+    public async Task<bool> ExistsAsync(string path, CancellationToken cancellationToken)
+    {
+        return await RunImpersonatedAsync(async () =>
+        {
+            return await Task.FromResult(File.Exists(path));
+        });
+    }
+
+    public async Task<Stream> OpenReadAsync(string path, CancellationToken cancellationToken)
+    {
+        return await RunImpersonatedAsync(async () =>
+        {
+            if (!File.Exists(path))
+            {
+                throw new FileNotFoundException($"File not found: {path}");
+            }
+
+            return await Task.FromResult(File.OpenRead(path));
+        });
+    }
+
+    public async Task WriteAsync(string path, Stream data, CancellationToken cancellationToken)
+    {
+        await RunImpersonatedAsync(async () =>
+        {
+            using var fileStream = File.Create(path);
+            await data.CopyToAsync(fileStream, cancellationToken);
+        });
+    }
+
+    public bool IsFileLocked(string path)
+    {
+        return RunImpersonatedAsync(async () =>
+        {
+            try
+            {
+                using var stream = File.Open(path, FileMode.Open, FileAccess.ReadWrite, FileShare.None);
+                return false;
+            }
+            catch (IOException)
+            {
+                return true;
+            }
+        }).GetAwaiter().GetResult();
     }
 }
