@@ -7,6 +7,8 @@
         _serviceProvider = serviceProvider;
     }
 
+    public int MaxRetries { get; private set; }
+
     public IMonitor CreateMonitor(Job job)
     {
         var sourceInfo = ConnectionStringParser.Parse(job.Source.Path);
@@ -16,7 +18,9 @@
             sourceInfo,
             destinationInfo,
             job.Mode,
-            job.FileFilter
+            job.FileFilter,
+            MaxRetries = job.Options.RetryCount,
+            InitialDelayMs = job.Options.InitialDelayMs
         );
 
         return sourceInfo.Protocol switch

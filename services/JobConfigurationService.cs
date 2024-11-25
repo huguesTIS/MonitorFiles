@@ -77,14 +77,14 @@ public class JobConfigurationService
             if (!job.Enabled)
                 continue;
 
-            var isSourceValid = await _validator.ValidateSourceAsync(job.Source, cancellationToken);
+            var isSourceValid = await _validator.ValidateSourceAsync(ConnectionStringParser.Parse(job.Source.Path), cancellationToken);
             if (!isSourceValid)
             {
                 _logger.LogError($"Invalid source path for job: {job.Name}");
                 job.Enabled = false; // Désactiver le job
             }
 
-            var isDestinationValid = await _validator.ValidateDestinationAsync(job.Destination, cancellationToken);
+            var isDestinationValid = await _validator.ValidateDestinationAsync(ConnectionStringParser.Parse(job.Destination.Path), cancellationToken);
             if (!isDestinationValid)
             {
                 _logger.LogError($"Invalid destination path for job: {job.Name}");

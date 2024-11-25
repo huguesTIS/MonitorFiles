@@ -13,7 +13,10 @@ public class FileProcessingContext
     public DateTime? EndProcessingTime { get; private set; } // Temps de fin de traitement
     public int RetryCount { get; private set; } // Nombre de tentatives de traitement
 
-    public FileProcessingContext(ParsedConnectionInfo source, ParsedConnectionInfo destination, MonitorMode mode, string fileFilter)
+    public int MaxRetries { get; set; }
+    public int InitialDelayMs { get; set; }
+
+    public FileProcessingContext(ParsedConnectionInfo source, ParsedConnectionInfo destination, MonitorMode mode, string fileFilter, int maxRetries, int initialDelayMs)
     {
         Source = source;
         Destination = destination;
@@ -21,6 +24,8 @@ public class FileProcessingContext
         FileFilter = fileFilter;
         EnqueuedTime = DateTime.Now;
         RetryCount = 0;
+        MaxRetries = maxRetries;
+        InitialDelayMs = initialDelayMs;
     }
 
     public void IncrementRetry()

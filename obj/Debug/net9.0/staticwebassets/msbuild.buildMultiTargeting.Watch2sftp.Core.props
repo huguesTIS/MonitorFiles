@@ -1,3 +1,0 @@
-﻿<Project>
-  <Import Project="..\build\Watch2sftp.Core.props" />
-</Project>

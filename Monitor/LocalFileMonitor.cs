@@ -4,15 +4,15 @@ public class LocalFileMonitor : IMonitor
 {
     private FileSystemWatcher _watcher;
     private readonly ILogger _logger;
-    private readonly Job _job;
+    private readonly FileProcessingContext _context;
     private IEventQueue _eventQueue;
 
-    public LocalFileMonitor(Job job, IEventQueue eventQueue, ILogger logger)
+    public LocalFileMonitor(FileProcessingContext context, IEventQueue eventQueue, ILogger logger)
     {
         _eventQueue = eventQueue ?? throw new ArgumentNullException(nameof(eventQueue));
-        _job = job ?? throw new ArgumentNullException(nameof(job));
+        _context = context ?? throw new ArgumentNullException(nameof(context));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
-        _watcher = new FileSystemWatcher(job.Source.Path)
+        _watcher = new FileSystemWatcher(_context.Source.Path)
         {
             EnableRaisingEvents = false,
             IncludeSubdirectories = true
@@ -22,6 +22,7 @@ public class LocalFileMonitor : IMonitor
     public Task StartAsync(CancellationToken cancellationToken)
     {
         _watcher.EnableRaisingEvents = true;
+        _watcher.Filter = _context.FileFilter;
         _watcher.Created += OnFileEvent;
         _watcher.Changed += OnFileEvent;
 
@@ -57,7 +58,7 @@ public class LocalFileMonitor : IMonitor
 
     private async Task HandleFileEventAsync(FileSystemEventArgs e)
     {
-        await _eventQueue.EnqueueAsync(new FileEvent(e.FullPath, DateTime.Now, e.ChangeType.ToString(), _job), CancellationToken.None);
+        await _eventQueue.EnqueueAsync(new FileEvent(e.FullPath, DateTime.Now, e.ChangeType.ToString(), _context), CancellationToken.None);
     }
 
     public void SetEventQueue(IEventQueue eventQueue)

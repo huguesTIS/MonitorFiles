@@ -1,0 +1,27 @@
+﻿# Fichiers binaires et répertoires de build
+bin/
+obj/
+*.dll
+*.exe
+*.tmp 
+
+# Fichiers de log
+*.log
+
+# Fichiers de publication
+publish/
+
+# Fichiers temporaires Visual Studio
+.vs/
+.vscode/
+*.user
+*.suo
+*.cache
+
+# Dépendances de package
+*.nuget
+packages/
+
+# Fichiers spécifiques à l'OS
+.DS_Store
+Thumbs.db

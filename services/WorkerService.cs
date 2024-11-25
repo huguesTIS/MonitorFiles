@@ -57,32 +57,52 @@ public class WorkerService : BackgroundService
 
     private async Task ProcessEventAsync(FileEvent fileEvent, CancellationToken stoppingToken)
     {
+        var context = fileEvent.Context;
+        context.MarkProcessingStarted();
+
         try
         {
-            _logger.LogInformation($"Processing event: {fileEvent.FilePath} ({fileEvent.EventType})");
-
             var sourceHandler = _fileSystemHandlerFactory.CreateHandler(context.Source);
             var destinationHandler = _fileSystemHandlerFactory.CreateHandler(context.Destination);
 
-            _logger.LogInformation($"Processed event successfully: {fileEvent.FilePath} ({fileEvent.EventType})");
+            switch (context.Mode)
+            {
+                case MonitorMode.Move:
+                    using (var stream = await sourceHandler.OpenReadAsync(fileEvent.FilePath, stoppingToken))
+                    {
+                        await destinationHandler.WriteAsync(context.Destination.Path, stream, stoppingToken);
+                    }
+                    await sourceHandler.DeleteAsync(fileEvent.FilePath, stoppingToken);
+                    break;
+
+                case MonitorMode.Copy:
+                    using (var stream = await sourceHandler.OpenReadAsync(fileEvent.FilePath, stoppingToken))
+                    {
+                        await destinationHandler.WriteAsync(context.Destination.Path, stream, stoppingToken);
+                    }
+                    break;
+
+                    // Ajoutez d'autres modes ici
+            }
+
+            context.MarkProcessingCompleted();
+            _logger.LogInformation($"Processed event: {fileEvent.FilePath} in {context.GetProcessingDuration()}.");
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, $"Failed to process event: {fileEvent.FilePath} ({fileEvent.EventType})");
+            context.IncrementRetry();
 
-            fileEvent.RetryCount++;
-
-            if (fileEvent.RetryCount < MaxRetries)
+            if (context.RetryCount <= context.Source.Options.MaxRetries)
             {
-                _logger.LogInformation($"Retrying event: {fileEvent.FilePath} ({fileEvent.EventType}), attempt {fileEvent.RetryCount}");
-                await Task.Delay(TimeSpan.FromSeconds(5 * fileEvent.RetryCount), stoppingToken); // Delai exponentiel
-                await _eventQueue.EnqueueAsync(fileEvent, stoppingToken); // Réenfiler l'événement
+                _logger.LogWarning($"Retrying event: {fileEvent.FilePath}. Attempt {context.RetryCount}.");
+                await _eventQueue.EnqueueAsync(fileEvent, stoppingToken, delayMs: context.RetryCount * 5000); // Délai croissant
             }
             else
             {
-                _logger.LogError($"Max retries reached for event: {fileEvent.FilePath} ({fileEvent.EventType}). Discarding event.");
+                _logger.LogError($"Failed to process event: {fileEvent.FilePath} after {context.RetryCount} retries.");
             }
         }
     }
+
 }
 
