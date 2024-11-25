@@ -1,10 +1,12 @@
 ﻿public class SmbFileSystemHandler : IFileSystemHandler
 {
     private readonly NetworkCredential _credentials;
+    private readonly string _uncPath;
 
-    public SmbFileSystemHandler(NetworkCredential credentials = null)
+    public SmbFileSystemHandler(ParsedConnectionInfo connectionInfo)
     {
-        _credentials = credentials;
+         _credentials = new NetworkCredential(connectionInfo.Username, connectionInfo.Password);
+        _uncPath = connectionInfo.Path;
     }
 
     private async Task<T> RunImpersonatedAsync<T>(Func<Task<T>> action)

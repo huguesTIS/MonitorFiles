@@ -1,6 +1,4 @@
 using Watch2sftp.Core;
-using Watch2sftp.Core.FileEventHandeler;
-
 
 var builder = WebApplication.CreateSlimBuilder(args);
 // Configure JSON serialization options to use the generated context
@@ -14,9 +12,6 @@ builder.Host.UseWindowsService();
 builder.Services.AddSingleton<IEventQueue, EventQueue>(); // File d'événements
 builder.Services.AddSingleton<IMonitorFactory, MonitorFactory>(); // Usine de monitors
 builder.Services.AddSingleton<FileSystemHandlerFactory>();
-builder.Services.AddTransient<IFileEventHandler, FileCreatedOrModifiedHandler>();
-builder.Services.AddTransient<IFileEventHandler, FileDeletedHandler>();
-builder.Services.AddSingleton<FileEventProcessor>();
 builder.Services.AddSingleton<JobConfigurationService> (); // Contient les configurations globales
 builder.Services.AddSingleton<PathValidatorService>(); // verifie que les chemins definie dans la config sont valid et accessibles
 builder.Services.AddHostedService<JobManagerBackgroundService>(); // Service Windows

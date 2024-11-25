@@ -1,8 +1,5 @@
-﻿using Renci.SshNet;
-using Renci.SshNet.Sftp;
-using System.IO;
-using System.Threading;
-using System.Threading.Tasks;
+﻿namespace Watch2sftp.Core.FileAbstract;
+
 
 public class SftpFileSystemHandler : IFileSystemHandler
 {
@@ -11,12 +8,12 @@ public class SftpFileSystemHandler : IFileSystemHandler
     private readonly string _username;
     private readonly string _password;
 
-    public SftpFileSystemHandler(string host, int port, string username, string password)
+    public SftpFileSystemHandler(ParsedConnectionInfo connectionInfo)
     {
-        _host = host;
-        _port = port;
-        _username = username;
-        _password = password;
+        _host = connectionInfo.Host;
+        _port = connectionInfo.Port ?? 22;
+        _username = connectionInfo.Username;
+        _password = connectionInfo.Password;
     }
 
     private SftpClient GetSftpClient()

@@ -26,6 +26,8 @@ public class JobConfigurationService
                     Name = "Job 1",
                     Description = "Description du job 1",
                     Enabled = true,
+                    Mode = MonitorMode.Move,
+                    FileFilter = "*.*",
                     Source = new SourcePath
                     {
                         Path = @"file://C:/Users/groshugo/Downloads",
@@ -33,10 +35,8 @@ public class JobConfigurationService
                     },
                     Destination = new DestinationPath
                     {
-                        Path = @"sftp://127.0.0.1:22@user1:password//server/share",
-                        Description = "Description du job 1",
-                        Mode = MonitorMode.Move,
-                        FileFilter = "*.*"
+                        Path = @"sftp://127.0.0.1:22@user1:password/share",
+                        Description = "Description du job 1",                                              
                     },
                     Options = new JobOptions { RetryCount = 3, InitialDelayMs = 5000 }
                 }

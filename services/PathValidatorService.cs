@@ -1,4 +1,6 @@
-﻿namespace Watch2sftp.Core.services;
+﻿using Watch2sftp.Core.Model;
+
+namespace Watch2sftp.Core.services;
 
 public class PathValidatorService
 {
@@ -11,7 +13,7 @@ public class PathValidatorService
         _factory = factory;
     }
 
-    public async Task<bool> ValidateSourceAsync(SourcePath source, CancellationToken cancellationToken)
+    public async Task<bool> ValidateSourceAsync(ParsedConnectionInfo source, CancellationToken cancellationToken)
     {
         if (!IsProtocolSupported(source.Path))
         {
@@ -19,16 +21,15 @@ public class PathValidatorService
             return false;
         }
 
-        if (!await IsAccessibleAsync(source.Path, cancellationToken))
+        if (!await IsAccessibleAsync(source, cancellationToken))
         {
             _logger.LogError($"Path not accessible: {source.Path}");
             return false;
         }
-
         return true;
     }
 
-    public async Task<bool> ValidateDestinationAsync(DestinationPath destination, CancellationToken cancellationToken)
+    public async Task<bool> ValidateDestinationAsync(ParsedConnectionInfo destination, CancellationToken cancellationToken)
     {
         if (!IsProtocolSupported(destination.Path))
         {
@@ -36,7 +37,7 @@ public class PathValidatorService
             return false;
         }
 
-        if (!await IsAccessibleAsync(destination.Path, cancellationToken))
+        if (!await IsAccessibleAsync(destination, cancellationToken))
         {
             _logger.LogError($"Path not accessible: {destination.Path}");
             return false;
@@ -50,12 +51,12 @@ public class PathValidatorService
         return path.StartsWith("file://") || path.StartsWith("smb://") || path.StartsWith("sftp://");
     }
 
-    private async Task<bool> IsAccessibleAsync(string path, CancellationToken cancellationToken)
+    private async Task<bool> IsAccessibleAsync(ParsedConnectionInfo path, CancellationToken cancellationToken)
     {
         try
         {
             var handler = _factory.CreateHandler(path);
-            return await handler.ExistsAsync(path, cancellationToken);
+            return await handler.ExistsAsync(path.Path, cancellationToken);
         }
         catch (Exception ex)
         {

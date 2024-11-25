@@ -10,6 +10,9 @@ public class Job
     public string Name { get; set; } = string.Empty;
     public string Description { get; set; } = string.Empty;
     public bool Enabled { get; set; }
+    public string FileFilter { get; set; } = "*.*"; // Par défaut, tous les fichiers
+
+    public MonitorMode Mode { get; set; } = MonitorMode.Move; // e.g., Push, Copy,sync
     public SourcePath Source { get; set; } = new();
     public DestinationPath Destination { get; set; } = new();
     public JobOptions Options { get; set; } = new();
@@ -19,15 +22,12 @@ public class SourcePath
 {
     public string Path { get; set; } = string.Empty; // Normalized URI-style path
     public string Description { get; set; } = string.Empty;
-    public string FileFilter { get; set; } = "*.*"; // Par défaut, tous les fichiers
 }
 
 public class DestinationPath
 {
     public string Path { get; set; } = string.Empty; // Normalized URI-style path
     public string Description { get; set; } = string.Empty;
-    public MonitorMode Mode { get; set; } = MonitorMode.Move; // e.g., Push, Copy,sync
-    public string FileFilter { get; set; } = "*.*"; // Par défaut, tous les fichiers
 }
 
 public class JobOptions

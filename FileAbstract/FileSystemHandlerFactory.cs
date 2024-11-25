@@ -2,24 +2,26 @@
 
 public class FileSystemHandlerFactory
 {
-    public IFileSystemHandler CreateHandler(string path)
-    {
-        if (path.StartsWith("file://"))
-        {
-            return new LocalFileSystemHandler();
-        }
-        else if (path.StartsWith("sftp://"))
-        {
-            // Extrait les paramètres de connexion depuis le chemin ou une configuration externe
-            return new SftpFileSystemHandler("host", "username", "password");
-        }
-        else if (path.StartsWith("smb://"))
-        {
-            // Extrait les paramètres de connexion depuis le chemin ou une configuration externe
-            return new SmbFileSystemHandler("host",  "username", "password");
-        }
+    private readonly IServiceProvider _serviceProvider;
 
-        throw new NotSupportedException($"Protocol not supported for path: {path}");
+    public FileSystemHandlerFactory(IServiceProvider serviceProvider)
+    {
+        _serviceProvider = serviceProvider;
+    }
+
+    public IFileSystemHandler CreateHandler(ParsedConnectionInfo path)
+    {
+
+
+        return path.Protocol switch
+        {
+            "file" => _serviceProvider.GetRequiredService<LocalFileSystemHandler>(),
+            "smb" => new SmbFileSystemHandler(path),
+            "sftp" => new SftpFileSystemHandler(path),
+
+            _ => throw new NotSupportedException($"Unsupported protocol: {path.Protocol}")
+        };
     }
 }
+
 

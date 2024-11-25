@@ -4,7 +4,7 @@ public class WorkerService : BackgroundService
 {
     private readonly IEventQueue _eventQueue;
     private readonly ILogger<WorkerService> _logger;
-    private readonly FileEventProcessor _fileEventProcessor;
+    private readonly FileSystemHandlerFactory _fileSystemHandlerFactory;
     private const int MaxRetries = 3;
     private const int QueueThreshold = 10; // Seuil pour ajuster les workers
     private int _activeWorkers = 1; // Nombre initial de workers
@@ -12,11 +12,11 @@ public class WorkerService : BackgroundService
     public WorkerService(
         IEventQueue eventQueue,
         ILogger<WorkerService> logger,
-        FileEventProcessor fileEventProcessor)
+        FileSystemHandlerFactory fileSystemHandlerFactory)    
     {
         _eventQueue = eventQueue;
         _logger = logger;
-        _fileEventProcessor = fileEventProcessor;
+        _fileSystemHandlerFactory = fileSystemHandlerFactory;
     }
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
@@ -61,7 +61,8 @@ public class WorkerService : BackgroundService
         {
             _logger.LogInformation($"Processing event: {fileEvent.FilePath} ({fileEvent.EventType})");
 
-            await _fileEventProcessor.ProcessFileEventAsync(fileEvent, stoppingToken);
+            var sourceHandler = _fileSystemHandlerFactory.CreateHandler(context.Source);
+            var destinationHandler = _fileSystemHandlerFactory.CreateHandler(context.Destination);
 
             _logger.LogInformation($"Processed event successfully: {fileEvent.FilePath} ({fileEvent.EventType})");
         }
