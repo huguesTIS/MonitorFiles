@@ -78,4 +78,23 @@ public class SftpFileSystemHandler : IFileSystemHandler
         // On SFTP, file locking is not typically supported. Always return false.
         return false;
     }
+
+    public async Task<IEnumerable<FileMetadata>> ListFolderAsync(string path, CancellationToken cancellationToken)
+    {
+        using var client = GetSftpClient();
+        client.Connect();
+        var files = client.ListDirectory(path);
+
+        var metadataList = files
+            .Where(f => !f.IsDirectory)
+            .Select(f => new FileMetadata
+            {
+                Path = f.FullName,
+                Size = f.Length,
+                LastModified = f.LastWriteTime
+            });
+
+        client.Disconnect();
+        return await Task.FromResult(metadataList);
+    }
 }

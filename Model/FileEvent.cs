@@ -1,5 +1,4 @@
 ﻿namespace Watch2sftp.Core.Model;
-
 public class FileEvent
 {
     public string FilePath { get; }
@@ -8,19 +7,25 @@ public class FileEvent
     public FileProcessingContext Context { get; }
 
     // Gestion des retries
-    public int RetryCount { get; private set; } // Nombre de tentatives effectuées
+    public int RetryCount { get; set; } // Nombre de tentatives effectuées (modifié pour être accessible en écriture)
 
     public int MaxRetries { get; private set; } // Nombre maximum de tentatives
-    public int RetryDelayMs { get; private set; } // Délai avant la prochaine tentative, en millisecondes
+    public int RetryDelayMs { get; set; } // Délai avant la prochaine tentative, en millisecondes (modifié pour être accessible en écriture)
 
     public FileEvent(string filePath, DateTime eventTime, string eventType, FileProcessingContext context)
     {
+        if (context == null)
+        {
+            throw new ArgumentNullException(nameof(context));
+        }
+
         FilePath = filePath;
         EventTime = eventTime;
         EventType = eventType;
         Context = context;
         RetryCount = 0;
-        RetryDelayMs = context.Source.Options.InitialDelayMs; // Défini par les options du job
+        MaxRetries = context.MaxRetries;
+        RetryDelayMs = context.InitialDelayMs; // Défini par les options du job
     }
 
     /// <summary>
@@ -38,8 +43,6 @@ public class FileEvent
     public void ResetRetry()
     {
         RetryCount = 0;
-        RetryDelayMs = Context.Source.Options.InitialDelayMs;
+        RetryDelayMs = Context.InitialDelayMs;
     }
 }
-
-

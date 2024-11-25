@@ -1,12 +1,17 @@
 ﻿namespace Watch2sftp.Core.Monitor;
 
-    public class EventQueue : IEventQueue
-    {
-        private readonly BlockingCollection<FileEvent> _queue = new();
-        private readonly ConcurrentDictionary<string, CancellationTokenSource> _delayDictionary = new();
-        public int QueueCount => _queue.Count;
+public class EventQueue : IEventQueue
+{
+    private readonly BlockingCollection<FileEvent> _queue = new();
+    private readonly ConcurrentDictionary<string, CancellationTokenSource> _delayDictionary = new();
+    public int QueueCount => _queue.Count;
 
-        private readonly ILogger _logger;
+    private readonly ILogger<EventQueue> _logger;
+
+    public EventQueue(ILogger<EventQueue> logger)
+    {
+        _logger = logger;
+    }
 
     public async Task EnqueueAsync(FileEvent fileEvent, CancellationToken cancellationToken, int delayMs = 0)
     {
@@ -38,13 +43,12 @@
         }
     }
 
-
     public async Task RequeueAsync(FileEvent fileEvent, CancellationToken cancellationToken)
     {
-        fileEvent.RetryCount++;
-        fileEvent.RetryDelay = TimeSpan.FromSeconds(fileEvent.RetryCount * 5); // Délai croissant (exponentiel simple)
+        fileEvent.IncrementRetry();
+        TimeSpan retryDelay = TimeSpan.FromMilliseconds(fileEvent.RetryDelayMs); // Utilisation du délai mis à jour
 
-        _logger.LogInformation($"Re-enqueuing event {fileEvent.FilePath} with delay {fileEvent.RetryDelay.TotalSeconds}s (Attempt: {fileEvent.RetryCount})");
+        _logger.LogInformation($"Re-enqueuing event {fileEvent.FilePath} with delay {retryDelay.TotalSeconds}s (Attempt: {fileEvent.RetryCount})");
 
         if (_delayDictionary.TryGetValue(fileEvent.FilePath, out var cts))
         {
@@ -57,7 +61,7 @@
 
         try
         {
-            await Task.Delay(fileEvent.RetryDelay, newCts.Token);
+            await Task.Delay(retryDelay, newCts.Token);
 
             if (!newCts.Token.IsCancellationRequested)
             {
@@ -71,17 +75,16 @@
         }
     }
 
-
-    public async Task<FileEvent> DequeueAsync(CancellationToken cancellationToken)
+    public async Task<FileEvent?> DequeueAsync(CancellationToken cancellationToken)
+    {
+        try
         {
-            try
-            {
-                return await Task.Run(() => _queue.Take(cancellationToken));
-            }
-            catch (OperationCanceledException)
-            {
-                // Handle cancellation
-                return null;
-            }
+            return await Task.Run(() => _queue.Take(cancellationToken));
+        }
+        catch (OperationCanceledException)
+        {
+            // Handle cancellation
+            return null;
         }
     }
+}

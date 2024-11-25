@@ -92,7 +92,7 @@ public class WorkerService : BackgroundService
         {
             context.IncrementRetry();
 
-            if (context.RetryCount <= context.Source.Options.MaxRetries)
+            if (context.RetryCount <= context.MaxRetries)
             {
                 _logger.LogWarning($"Retrying event: {fileEvent.FilePath}. Attempt {context.RetryCount}.");
                 await _eventQueue.EnqueueAsync(fileEvent, stoppingToken, delayMs: context.RetryCount * 5000); // Délai croissant

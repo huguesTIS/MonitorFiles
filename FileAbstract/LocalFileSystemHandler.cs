@@ -44,6 +44,27 @@ public class LocalFileSystemHandler : IFileSystemHandler
             return true;
         }
     }
+
+    public async Task<IEnumerable<FileMetadata>> ListFolderAsync(string path, CancellationToken cancellationToken)
+    {
+        var files = Directory.EnumerateFiles(path, "*", SearchOption.AllDirectories);
+        var metadataList = new List<FileMetadata>();
+
+        foreach (var file in files)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+
+            var info = new FileInfo(file);
+            metadataList.Add(new FileMetadata
+            {
+                Path = file,
+                Size = info.Length,
+                LastModified = info.LastWriteTime
+            });
+        }
+
+        return await Task.FromResult(metadataList);
+    }
 }
 
 

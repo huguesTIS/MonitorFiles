@@ -1,4 +1,6 @@
-﻿public class MonitorFactory : IMonitorFactory
+﻿namespace Watch2sftp.Core.Monitor;
+public class MonitorFactory : IMonitorFactory
+
 {
     private readonly IServiceProvider _serviceProvider;
 
@@ -19,8 +21,8 @@
             destinationInfo,
             job.Mode,
             job.FileFilter,
-            MaxRetries = job.Options.RetryCount,
-            InitialDelayMs = job.Options.InitialDelayMs
+            job.Options.RetryCount ,
+            job.Options.InitialDelayMs
         );
 
         return sourceInfo.Protocol switch

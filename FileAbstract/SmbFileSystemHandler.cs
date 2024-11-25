@@ -1,11 +1,13 @@
-﻿public class SmbFileSystemHandler : IFileSystemHandler
+﻿namespace Watch2sftp.Core.FileAbstract;
+public class SmbFileSystemHandler : IFileSystemHandler
+
 {
     private readonly NetworkCredential _credentials;
     private readonly string _uncPath;
 
     public SmbFileSystemHandler(ParsedConnectionInfo connectionInfo)
     {
-         _credentials = new NetworkCredential(connectionInfo.Username, connectionInfo.Password);
+        _credentials = new NetworkCredential(connectionInfo.Username, connectionInfo.Password);
         _uncPath = connectionInfo.Path;
     }
 
@@ -41,7 +43,6 @@
             {
                 File.Delete(path);
             }
-            return Task.CompletedTask;
         });
     }
 
@@ -49,7 +50,7 @@
     {
         return await RunImpersonatedAsync(async () =>
         {
-            return await Task.FromResult(File.Exists(path));
+            return File.Exists(path);
         });
     }
 
@@ -62,7 +63,7 @@
                 throw new FileNotFoundException($"File not found: {path}");
             }
 
-            return await Task.FromResult(File.OpenRead(path));
+            return File.OpenRead(path);
         });
     }
 
@@ -89,5 +90,34 @@
                 return true;
             }
         }).GetAwaiter().GetResult();
+    }
+
+    public async Task<IEnumerable<FileMetadata>> ListFolderAsync(string path, CancellationToken cancellationToken)
+    {
+        return await RunImpersonatedAsync(async () =>
+        {
+            var metadataList = new List<FileMetadata>();
+
+            if (!Directory.Exists(path))
+            {
+                throw new DirectoryNotFoundException($"Directory not found: {path}");
+            }
+
+            var files = Directory.EnumerateFiles(path, "*", SearchOption.AllDirectories);
+            foreach (var file in files)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+
+                var info = new FileInfo(file);
+                metadataList.Add(new FileMetadata
+                {
+                    Path = file,
+                    Size = info.Length,
+                    LastModified = info.LastWriteTime
+                });
+            }
+
+            return metadataList;
+        });
     }
 }
