@@ -11,6 +11,5 @@ global using Watch2sftp.Core.FileAbstract;
 global using Watch2sftp.Core.Model;
 global using Watch2sftp.Core.services;
 global using Watch2sftp.Core.Utils;
-global using Watch2sftp.Core.FileEventHandeler;
 global using Renci.SshNet;
 global using Microsoft.Extensions.Hosting.WindowsServices;

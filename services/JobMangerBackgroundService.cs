@@ -98,8 +98,8 @@ public class JobManagerBackgroundService : BackgroundService, IDisposable
         }
 
         // Valide les chemins source et destination de manière asynchrone
-        if (!await _pathValidator.ValidateSourceAsync(job.Source, stoppingToken) ||
-            !await _pathValidator.ValidateDestinationAsync(job.Destination, stoppingToken))
+        if (!await _pathValidator.ValidateSourceAsync(ConnectionStringParser.Parse(job.Source.Path), stoppingToken) ||
+            !await _pathValidator.ValidateDestinationAsync(ConnectionStringParser.Parse(job.Destination.Path), stoppingToken))
         {
             _logger.LogError($"Job {job.Name} has invalid paths. Skipping.");
             return;
