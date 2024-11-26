@@ -9,6 +9,7 @@ builder.Services.ConfigureHttpJsonOptions(options =>
 // exécution comme service Windows
 builder.Host.UseWindowsService();
 // Ajout des services nécessaires
+builder.Services.AddSingleton <RetryManager>(); // Gestionnaire de reessaye
 builder.Services.AddSingleton<IEventQueue, EventQueue>(); // File d'événements
 builder.Services.AddSingleton<IMonitorFactory, MonitorFactory>(); // Usine de monitors
 builder.Services.AddSingleton<FileSystemHandlerFactory>();

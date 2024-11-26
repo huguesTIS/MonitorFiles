@@ -7,14 +7,18 @@ public class EventQueue : IEventQueue
     public int QueueCount => _queue.Count;
 
     private readonly ILogger<EventQueue> _logger;
+    private readonly RetryManager _retryManager;
 
-    public EventQueue(ILogger<EventQueue> logger)
+    public EventQueue(ILogger<EventQueue> logger, RetryManager retryManager)
     {
         _logger = logger;
+        _retryManager = retryManager;
     }
 
     public async Task EnqueueAsync(FileEvent fileEvent, CancellationToken cancellationToken, int delayMs = 0)
     {
+        fileEvent.Status = "Enqueued"; // Mettre à jour le statut de l'événement
+
         if (_delayDictionary.TryGetValue(fileEvent.FilePath, out var cts))
         {
             cts.Cancel();
@@ -45,7 +49,7 @@ public class EventQueue : IEventQueue
 
     public async Task RequeueAsync(FileEvent fileEvent, CancellationToken cancellationToken)
     {
-        fileEvent.IncrementRetry();
+        _retryManager.IncrementRetry(fileEvent);
         TimeSpan retryDelay = TimeSpan.FromMilliseconds(fileEvent.RetryDelayMs); // Utilisation du délai mis à jour
 
         _logger.LogInformation($"Re-enqueuing event {fileEvent.FilePath} with delay {retryDelay.TotalSeconds}s (Attempt: {fileEvent.RetryCount})");
@@ -79,7 +83,12 @@ public class EventQueue : IEventQueue
     {
         try
         {
-            return await Task.Run(() => _queue.Take(cancellationToken));
+            var fileEvent = await Task.Run(() => _queue.Take(cancellationToken));
+            if (fileEvent != null)
+            {
+                _retryManager.MarkProcessing(fileEvent); // Marquer l'événement comme en cours de traitement
+            }
+            return fileEvent;
         }
         catch (OperationCanceledException)
         {

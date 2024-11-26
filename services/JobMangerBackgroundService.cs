@@ -1,4 +1,6 @@
-﻿namespace Watch2sftp.Core.services;
+﻿using Watch2sftp.Core.Monitor;
+
+namespace Watch2sftp.Core.services;
 
 public class JobManagerBackgroundService : BackgroundService, IDisposable
 {
@@ -6,6 +8,7 @@ public class JobManagerBackgroundService : BackgroundService, IDisposable
     private readonly PathValidatorService _pathValidator;
     private readonly ILogger<JobManagerBackgroundService> _logger;
     private readonly IMonitorFactory _monitorFactory;
+    private readonly FileSystemHandlerFactory _fileSystemHandlerFactory;
 
     // Utilisation d'un dictionnaire thread-safe pour stocker les tokens et Monitors
     private readonly ConcurrentDictionary<string, (CancellationTokenSource TokenSource, IMonitor Monitor)> _jobMonitors = new();
@@ -14,12 +17,14 @@ public class JobManagerBackgroundService : BackgroundService, IDisposable
         JobConfigurationService configService,
         PathValidatorService pathValidator,
         ILogger<JobManagerBackgroundService> logger,
-        IMonitorFactory monitorFactory)
+        IMonitorFactory monitorFactory,
+        FileSystemHandlerFactory fileSystemHandlerFactory)
     {
         _configService = configService;
         _pathValidator = pathValidator;
         _logger = logger;
         _monitorFactory = monitorFactory;
+        _fileSystemHandlerFactory = fileSystemHandlerFactory;
     }
 
     /// <summary>
@@ -102,6 +107,17 @@ public class JobManagerBackgroundService : BackgroundService, IDisposable
             !await _pathValidator.ValidateDestinationAsync(ConnectionStringParser.Parse(job.Destination.Path), stoppingToken))
         {
             _logger.LogError($"Job {job.Name} has invalid paths. Skipping.");
+            return;
+        }
+
+        // Exécute le Pre-Job avant de démarrer le Monitor
+        var preJobTask = new PreJobTask(job.Source.Path, job.Destination.Path, job.Mode);
+        var preJobManager = new PreJobManager(_fileSystemHandlerFactory, _logger);
+        bool preJobSuccess = await preJobManager.ExecutePreJobAsync(preJobTask, stoppingToken);
+
+        if (!preJobSuccess)
+        {
+            _logger.LogError($"Pre-Job for {job.Name} failed. Skipping job start.");
             return;
         }
 

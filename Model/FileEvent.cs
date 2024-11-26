@@ -4,6 +4,7 @@ public class FileEvent
     public string FilePath { get; }
     public DateTime EventTime { get; }
     public string EventType { get; }
+    public string Status { get; set; } // Ajout d'une propriété Status pour gérer l'état de l'événement
     public FileProcessingContext Context { get; }
 
     // Gestion des retries
@@ -14,11 +15,6 @@ public class FileEvent
 
     public FileEvent(string filePath, DateTime eventTime, string eventType, FileProcessingContext context)
     {
-        if (context == null)
-        {
-            throw new ArgumentNullException(nameof(context));
-        }
-
         FilePath = filePath;
         EventTime = eventTime;
         EventType = eventType;
@@ -26,15 +22,7 @@ public class FileEvent
         RetryCount = 0;
         MaxRetries = context.MaxRetries;
         RetryDelayMs = context.InitialDelayMs; // Défini par les options du job
-    }
-
-    /// <summary>
-    /// Augmente le compteur de retries et le délai associé.
-    /// </summary>
-    public void IncrementRetry()
-    {
-        RetryCount++;
-        RetryDelayMs *= 2; // Double le délai à chaque tentative (backoff exponentiel)
+        Status = "Enqueued"; // Statut initial
     }
 
     /// <summary>
@@ -44,5 +32,6 @@ public class FileEvent
     {
         RetryCount = 0;
         RetryDelayMs = Context.InitialDelayMs;
+        Status = "Enqueued"; // Réinitialiser le statut
     }
 }

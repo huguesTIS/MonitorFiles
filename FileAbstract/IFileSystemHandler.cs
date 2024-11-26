@@ -1,4 +1,4 @@
-﻿namespace Watch2sftp.Core.FileAbstract;
+﻿namespace Watch2sftp.Core.Monitor;
 
 
 public interface IFileSystemHandler
