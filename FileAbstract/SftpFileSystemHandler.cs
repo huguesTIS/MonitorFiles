@@ -1,12 +1,12 @@
 ﻿namespace Watch2sftp.Core.Monitor;
 
-
 public class SftpFileSystemHandler : IFileSystemHandler
 {
     private readonly string _host;
     private readonly int _port;
     private readonly string _username;
     private readonly string _password;
+    private SftpClient _client;
 
     public SftpFileSystemHandler(ParsedConnectionInfo connectionInfo)
     {
@@ -14,63 +14,60 @@ public class SftpFileSystemHandler : IFileSystemHandler
         _port = connectionInfo.Port ?? 22;
         _username = connectionInfo.Username;
         _password = connectionInfo.Password;
+
+        // Establish a single connection to be reused
+        _client = new SftpClient(_host, _port, _username, _password);
+        _client.Connect();
     }
 
-    private SftpClient GetSftpClient()
+    private void EnsureConnected()
     {
-        return new SftpClient(_host, _port, _username, _password);
+        if (!_client.IsConnected)
+        {
+            _client.Connect();
+        }
     }
 
     public async Task DeleteAsync(string path, CancellationToken cancellationToken)
     {
-        using var client = GetSftpClient();
-        client.Connect();
-        if (client.Exists(path))
+        EnsureConnected();
+        if (_client.Exists(path))
         {
-            client.DeleteFile(path);
+            _client.DeleteFile(path);
         }
-        client.Disconnect();
         await Task.CompletedTask;
     }
 
     public async Task<bool> ExistsAsync(string path, CancellationToken cancellationToken)
     {
-        using var client = GetSftpClient();
-        client.Connect();
-        var exists = client.Exists(path);
-        client.Disconnect();
+        EnsureConnected();
+        var exists = _client.Exists(path);
         return await Task.FromResult(exists);
     }
 
     public async Task<Stream> OpenReadAsync(string path, CancellationToken cancellationToken)
     {
-        using var client = GetSftpClient();
-        client.Connect();
-        if (!client.Exists(path))
+        EnsureConnected();
+        if (!_client.Exists(path))
         {
-            client.Disconnect();
             throw new FileNotFoundException($"File not found: {path}");
         }
 
         var stream = new MemoryStream();
-        client.DownloadFile(path, stream);
+        _client.DownloadFile(path, stream);
         stream.Position = 0; // Reset stream position
-        client.Disconnect();
 
         return await Task.FromResult(stream);
     }
 
     public async Task WriteAsync(string path, Stream data, CancellationToken cancellationToken)
     {
-        using var client = GetSftpClient();
-        client.Connect();
+        EnsureConnected();
 
         using var memoryStream = new MemoryStream();
         await data.CopyToAsync(memoryStream, cancellationToken);
         memoryStream.Position = 0; // Reset stream position
-        client.UploadFile(memoryStream, path);
-
-        client.Disconnect();
+        _client.UploadFile(memoryStream, path);
     }
 
     public bool IsFileLocked(string path)
@@ -79,22 +76,31 @@ public class SftpFileSystemHandler : IFileSystemHandler
         return false;
     }
 
-    public async Task<IEnumerable<FileMetadata>> ListFolderAsync(string path, CancellationToken cancellationToken)
+    public async IAsyncEnumerable<FileMetadata> ListFolderAsync(string path, [EnumeratorCancellation] CancellationToken cancellationToken)
     {
-        using var client = GetSftpClient();
-        client.Connect();
-        var files = client.ListDirectory(path);
+        EnsureConnected();
+        var files = _client.ListDirectory(path);
 
-        var metadataList = files
-            .Where(f => !f.IsDirectory)
-            .Select(f => new FileMetadata
+        foreach (var file in files.Where(f => !f.IsDirectory))
+        {
+            yield return new FileMetadata
             {
-                Path = f.FullName,
-                Size = f.Length,
-                LastModified = f.LastWriteTime
-            });
+                Path = file.FullName,
+                Size = file.Length,
+                LastModified = file.LastWriteTime
+            };
 
-        client.Disconnect();
-        return await Task.FromResult(metadataList);
+            await Task.Yield(); // Yield to avoid blocking
+        }
+    }
+
+    public void Dispose()
+    {
+        if (_client != null)
+        {
+            _client.Disconnect();
+            _client.Dispose();
+            _client = null;
+        }
     }
 }
