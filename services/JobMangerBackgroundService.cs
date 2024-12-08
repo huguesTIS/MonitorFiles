@@ -111,9 +111,8 @@ public class JobManagerBackgroundService : BackgroundService, IDisposable
         }
 
         // Exécute le Pre-Job avant de démarrer le Monitor
-        var preJobTask = new PreJobTask(job.Source.Path, job.Destination.Path, job.Mode);
         var preJobManager = new PreJobManager(_fileSystemHandlerFactory, _logger);
-        bool preJobSuccess = await preJobManager.ExecutePreJobAsync(preJobTask, stoppingToken);
+        bool preJobSuccess = await preJobManager.ExecutePreJobAsync(job, stoppingToken);
 
         if (!preJobSuccess)
         {
