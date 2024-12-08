@@ -7,7 +7,7 @@ global using System.Security.Principal;
 global using System.Security;
 global using System.Net;
 global using Watch2sftp.Core.Monitor;
-global using Watch2sftp.Core.Monitor;
+global using System.Runtime.CompilerServices;
 global using Watch2sftp.Core.Model;
 global using Watch2sftp.Core.services;
 global using Watch2sftp.Core.Utils;

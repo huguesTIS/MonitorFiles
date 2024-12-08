@@ -1,6 +1,7 @@
-﻿namespace Watch2sftp.Core.Monitor;
-public class SmbFileSystemHandler : IFileSystemHandler
+﻿
+namespace Watch2sftp.Core.Monitor;
 
+public class SmbFileSystemHandler : IFileSystemHandler
 {
     private readonly NetworkCredential _credentials;
     private readonly string _uncPath;
@@ -10,7 +11,7 @@ public class SmbFileSystemHandler : IFileSystemHandler
         _credentials = new NetworkCredential(connectionInfo.Username, connectionInfo.Password);
         _uncPath = connectionInfo.Path;
     }
-
+        
     private async Task<T> RunImpersonatedAsync<T>(Func<Task<T>> action)
     {
         if (_credentials == null)
@@ -31,7 +32,7 @@ public class SmbFileSystemHandler : IFileSystemHandler
         await RunImpersonatedAsync(async () =>
         {
             await action();
-            return true; // Dummy return for void methods
+            return true; // Valeur factice
         });
     }
 
@@ -92,32 +93,76 @@ public class SmbFileSystemHandler : IFileSystemHandler
         }).GetAwaiter().GetResult();
     }
 
-    public async Task<IEnumerable<FileMetadata>> ListFolderAsync(string path, CancellationToken cancellationToken)
+    public async IAsyncEnumerable<FileMetadata> ListFolderAsync(
+        string path,
+        [EnumeratorCancellation] CancellationToken cancellationToken,
+        Func<FileMetadata, bool>? filter = null,
+        bool recursive = false)
     {
-        return await RunImpersonatedAsync(async () =>
+        // On récupère d'abord tous les fichiers via impersonation
+        var files = await RunImpersonatedAsync(() => EnumerateFilesAsync(path, cancellationToken, filter, recursive));
+
+        // Puis on les yield asynchronement
+        foreach (var fileMetadata in files)
         {
-            var metadataList = new List<FileMetadata>();
+            cancellationToken.ThrowIfCancellationRequested();
+            yield return fileMetadata;
+            // On peut insérer un Task.Yield() si souhaité
+            await Task.Yield();
+        }
+    }
 
-            if (!Directory.Exists(path))
+    // Cette méthode retourne désormais une liste plutôt qu'un IAsyncEnumerable
+    private async Task<List<FileMetadata>> EnumerateFilesAsync(
+        string path,
+        CancellationToken cancellationToken,
+        Func<FileMetadata, bool>? filter,
+        bool recursive)
+    {
+        if (!Directory.Exists(path))
+        {
+            throw new DirectoryNotFoundException($"Directory not found: {path}");
+        }
+
+        var result = new List<FileMetadata>();
+
+        // Enumération des fichiers
+        var files = Directory.EnumerateFiles(path);
+        foreach (var file in files)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            var fileInfo = new FileInfo(file);
+            var metadata = new FileMetadata
             {
-                throw new DirectoryNotFoundException($"Directory not found: {path}");
-            }
+                Path = file,
+                Size = fileInfo.Length,
+                LastModified = fileInfo.LastWriteTime,
+                Extension = fileInfo.Extension
+            };
 
-            var files = Directory.EnumerateFiles(path, "*", SearchOption.AllDirectories);
-            foreach (var file in files)
+            if (filter == null || filter(metadata))
             {
-                cancellationToken.ThrowIfCancellationRequested();
-
-                var info = new FileInfo(file);
-                metadataList.Add(new FileMetadata
-                {
-                    Path = file,
-                    Size = info.Length,
-                    LastModified = info.LastWriteTime
-                });
+                result.Add(metadata);
             }
+        }
 
-            return metadataList;
-        });
+        // Récursivité si nécessaire
+        if (recursive)
+        {
+            var directories = Directory.EnumerateDirectories(path);
+            foreach (var dir in directories)
+            {
+                var subFiles = await EnumerateFilesAsync(dir, cancellationToken, filter, recursive);
+                result.AddRange(subFiles);
+            }
+        }
+
+        return result;
     }
 }
+
+
+
+
+
+

@@ -1,4 +1,6 @@
-﻿namespace Watch2sftp.Core.Monitor;
+﻿using Renci.SshNet.Sftp;
+
+namespace Watch2sftp.Core.Monitor;
 
 public class LocalFileSystemHandler : IFileSystemHandler
 {
@@ -45,26 +47,63 @@ public class LocalFileSystemHandler : IFileSystemHandler
         }
     }
 
-    public async Task<IEnumerable<FileMetadata>> ListFolderAsync(string path, CancellationToken cancellationToken)
+    public async IAsyncEnumerable<FileMetadata> ListFolderAsync(
+        string path,
+        [EnumeratorCancellation] CancellationToken cancellationToken,
+        Func<FileMetadata, bool>? filter = null,
+        bool recursive = false)
     {
-        var files = Directory.EnumerateFiles(path, "*", SearchOption.AllDirectories);
-        var metadataList = new List<FileMetadata>();
-
-        foreach (var file in files)
+        if (!Directory.Exists(path))
         {
-            cancellationToken.ThrowIfCancellationRequested();
-
-            var info = new FileInfo(file);
-            metadataList.Add(new FileMetadata
-            {
-                Path = file,
-                Size = info.Length,
-                LastModified = info.LastWriteTime
-            });
+            throw new DirectoryNotFoundException($"Directory not found: {path}");
         }
 
-        return await Task.FromResult(metadataList);
+        // Helper method for recursive enumeration
+        async IAsyncEnumerable<FileMetadata> ProcessDirectory(string directoryPath, [EnumeratorCancellation] CancellationToken ct)
+        {
+            var files = Directory.EnumerateFiles(directoryPath);
+            foreach (var file in files)
+            {
+                ct.ThrowIfCancellationRequested();
+                var fileInfo = new FileInfo(file);
+
+                var metadata = new FileMetadata
+                {
+                    Path = file,
+                    Size = fileInfo.Length,
+                    LastModified = fileInfo.LastWriteTime,
+                    Extension = fileInfo.Extension
+                };
+
+                // On applique le filtre sur FileMetadata
+                if (filter != null && !filter(metadata))
+                {
+                    continue;
+                }
+
+                yield return metadata;
+
+                await Task.Yield(); // Simulate async operation
+            }
+
+            if (recursive)
+            {
+                var directories = Directory.EnumerateDirectories(directoryPath);
+                foreach (var dir in directories)
+                {
+                    await foreach (var subFile in ProcessDirectory(dir, ct))
+                    {
+                        yield return subFile;
+                    }
+                }
+            }
+        }
+
+        await foreach (var file in ProcessDirectory(path, cancellationToken))
+        {
+            yield return file;
+        }
     }
+
+
 }
-
-

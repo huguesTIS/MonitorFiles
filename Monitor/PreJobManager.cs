@@ -1,4 +1,8 @@
 ﻿
+using FastRsync.Core;
+using FastRsync.Delta;
+using FastRsync.Diagnostics;
+using FastRsync.Signature;
 using System.Buffers;
 using System.IO.Compression;
 using System.Text;
@@ -81,8 +85,14 @@ public class PreJobManager
         }
 
         // Retrieve the destination files once and create a dictionary for quick lookup
-        var destinationFiles = await destinationHandler.ListFolderAsync(destinationcon.Path, cancellationToken).ToListAsync(cancellationToken);
-        var destinationFilesDict = destinationFiles.ToDictionary(f => f.Path, f => f);
+        // var destinationFiles = await destinationHandler.ListFolderAsync(destinationcon.Path, cancellationToken).ToListAsync(cancellationToken);
+        // var destinationFilesDict = destinationFiles.ToDictionary(f => f.Path, f => f);
+        // Dictionnaire pour un accès rapide aux fichiers de destination
+        var destinationFilesDict = new Dictionary<string, FileMetadata>();
+        await foreach (var destFile in destinationHandler.ListFolderAsync(destinationcon.Path, cancellationToken))
+        {
+            destinationFilesDict[destFile.Path] = destFile;
+        }
 
         using var archiveStream = archiveFiles ? new FileStream(Path.Combine(archiveFolderBuilder.ToString(), $"archive_{DateTime.Now:yyyyMMddHHmmss}.zip"), FileMode.Create) : Stream.Null;
         using var archive = archiveFiles ? new ZipArchive(archiveStream, ZipArchiveMode.Create) : null;
@@ -140,9 +150,12 @@ public class PreJobManager
         if (sync)
         {
             // Remove files from destination that are no longer in source
-            var sourceFiles = await sourceHandler.ListFolderAsync(sourcecon.Path, cancellationToken).ToListAsync(cancellationToken);
-            var sourceFilesSet = new HashSet<string>(sourceFiles.Select(f => f.Path));
-            foreach (var destFile in destinationFiles)
+            var sourceFilesSet = new HashSet<string>();
+            await foreach (var srcFile in sourceHandler.ListFolderAsync(sourcecon.Path, cancellationToken))
+            {
+                sourceFilesSet.Add(srcFile.Path);
+            }
+            foreach (var destFile in destinationFilesDict.Values)
             {
                 if (!sourceFilesSet.Contains(destFile.Path))
                 {
@@ -159,16 +172,18 @@ public class PreJobManager
         using var signatureStream = GetMemoryStream();
         using (var sourceStream = await sourceHandler.OpenReadAsync(sourcePath, cancellationToken))
         {
-            var signatureBuilder = new SignatureBuilder();
+            var signatureBuilder = new  SignatureBuilder();
             signatureBuilder.Build(sourceStream, new SignatureWriter(signatureStream));
         }
 
         using var deltaStream = GetMemoryStream();
         using (var destinationStream = await destinationHandler.OpenReadAsync(destinationPath, cancellationToken))
         {
+            var progressHandler = new Progress<ProgressReport>(); // Gestionnaire de progression par défaut
             var deltaBuilder = new DeltaBuilder();
-            deltaBuilder.BuildDelta(destinationStream, new SignatureReader(signatureStream), new AggregateCopyOperationsDecorator(new BinaryDeltaWriter(deltaStream)));
+            deltaBuilder.BuildDelta(destinationStream, new SignatureReader(signatureStream, progressHandler), new AggregateCopyOperationsDecorator(new BinaryDeltaWriter(deltaStream)));
         }
+
 
         deltaStream.Seek(0, SeekOrigin.Begin);
         await destinationHandler.WriteAsync(destinationPath, deltaStream, cancellationToken);

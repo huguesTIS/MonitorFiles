@@ -1,4 +1,6 @@
-﻿namespace Watch2sftp.Core.Monitor;
+﻿using Renci.SshNet.Sftp;
+
+namespace Watch2sftp.Core.Monitor;
 
 
 public interface IFileSystemHandler
@@ -8,7 +10,12 @@ public interface IFileSystemHandler
     Task<Stream> OpenReadAsync(string path, CancellationToken cancellationToken);
     Task WriteAsync(string path, Stream data, CancellationToken cancellationToken);
     bool IsFileLocked(string path);
-    Task<IEnumerable<FileMetadata>> ListFolderAsync(string path, CancellationToken cancellationToken);
+    IAsyncEnumerable<FileMetadata> ListFolderAsync(
+        string path,
+        CancellationToken cancellationToken,
+        Func<FileMetadata, bool>? filter = null,
+        bool recursive = false
+    );
 }
 
 

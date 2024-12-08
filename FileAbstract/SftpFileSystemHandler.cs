@@ -1,6 +1,13 @@
-﻿namespace Watch2sftp.Core.Monitor;
+﻿using System;
+using System.Collections.Generic;
+using System.IO;
+using System.Runtime.CompilerServices;
+using System.Threading;
+using System.Threading.Tasks;
+using Renci.SshNet;
+using Renci.SshNet.Sftp;
 
-public class SftpFileSystemHandler : IFileSystemHandler
+public class SftpFileSystemHandler : IFileSystemHandler, IAsyncDisposable
 {
     private readonly string _host;
     private readonly int _port;
@@ -15,90 +22,131 @@ public class SftpFileSystemHandler : IFileSystemHandler
         _username = connectionInfo.Username;
         _password = connectionInfo.Password;
 
-        // Establish a single connection to be reused
         _client = new SftpClient(_host, _port, _username, _password);
-        _client.Connect();
     }
 
-    private void EnsureConnected()
+    private async Task EnsureConnectedAsync(CancellationToken cancellationToken = default)
     {
         if (!_client.IsConnected)
         {
-            _client.Connect();
+            // Si une méthode ConnectAsync existe dans la version que vous utilisez :
+             await _client.ConnectAsync(cancellationToken);
+            // Sinon, vous devrez rester synchrone pour la connexion initiale.
+
+            // À défaut, si seulement Connect() est dispo :
+           // await Task.Run(() => _client.Connect(), cancellationToken);
         }
     }
 
     public async Task DeleteAsync(string path, CancellationToken cancellationToken)
     {
-        EnsureConnected();
-        if (_client.Exists(path))
-        {
-            _client.DeleteFile(path);
-        }
-        await Task.CompletedTask;
+        await EnsureConnectedAsync(cancellationToken);
+
+        // Méthode async native :
+        await _client.DeleteFileAsync(path, cancellationToken);
     }
 
     public async Task<bool> ExistsAsync(string path, CancellationToken cancellationToken)
     {
-        EnsureConnected();
-        var exists = _client.Exists(path);
-        return await Task.FromResult(exists);
+        await EnsureConnectedAsync(cancellationToken);
+        return await _client.ExistsAsync(path, cancellationToken);
     }
 
     public async Task<Stream> OpenReadAsync(string path, CancellationToken cancellationToken)
     {
-        EnsureConnected();
-        if (!_client.Exists(path))
+        await EnsureConnectedAsync(cancellationToken);
+
+        if (!await _client.ExistsAsync(path, cancellationToken))
         {
             throw new FileNotFoundException($"File not found: {path}");
         }
 
-        var stream = new MemoryStream();
-        _client.DownloadFile(path, stream);
-        stream.Position = 0; // Reset stream position
-
-        return await Task.FromResult(stream);
+        // Utilisation de OpenAsync avec les bons paramètres
+        var sftpStream = await _client.OpenAsync(path, FileMode.Open, FileAccess.Read, cancellationToken);
+        return sftpStream; // SftpFileStream hérite de Stream, donc c'est compatible
     }
 
     public async Task WriteAsync(string path, Stream data, CancellationToken cancellationToken)
     {
-        EnsureConnected();
+        await EnsureConnectedAsync(cancellationToken);
 
-        using var memoryStream = new MemoryStream();
-        await data.CopyToAsync(memoryStream, cancellationToken);
-        memoryStream.Position = 0; // Reset stream position
-        _client.UploadFile(memoryStream, path);
+        if (data.CanSeek)
+        {
+            data.Position = 0;
+        }
+
+        // On ouvre le fichier en écriture via la méthode synchrone.
+        // Puisque c'est une opération rapide, on peut l'accepter telle quelle ou la mettre dans un Task.Run.
+        using var stream = _client.Open(path, FileMode.Create, FileAccess.Write);
+
+        // Maintenant, on peut utiliser CopyToAsync pour copier de façon asynchrone.
+        // CopyToAsync utilisera ReadAsync/WriteAsync sur les flux, 
+        // ce qui ne bloquera pas le thread appelant.
+        await data.CopyToAsync(stream, 81920, cancellationToken);
     }
 
     public bool IsFileLocked(string path)
     {
-        // On SFTP, file locking is not typically supported. Always return false.
+        // Sur SFTP, pas de concept de verrouillage fichier
         return false;
     }
 
-    public async IAsyncEnumerable<FileMetadata> ListFolderAsync(string path, [EnumeratorCancellation] CancellationToken cancellationToken)
+    public async IAsyncEnumerable<FileMetadata> ListFolderAsync(
+        string path,
+        [EnumeratorCancellation] CancellationToken cancellationToken,
+        Func<FileMetadata, bool>? filter = null,
+        bool recursive = false)
     {
-        EnsureConnected();
-        var files = _client.ListDirectory(path);
+        await EnsureConnectedAsync(cancellationToken);
 
-        foreach (var file in files.Where(f => !f.IsDirectory))
+        // Méthode async native retournant IAsyncEnumerable<SftpFile> :
+        await foreach (var file in _client.ListDirectoryAsync(path, cancellationToken))
         {
-            yield return new FileMetadata
-            {
-                Path = file.FullName,
-                Size = file.Length,
-                LastModified = file.LastWriteTime
-            };
+            cancellationToken.ThrowIfCancellationRequested();
 
-            await Task.Yield(); // Yield to avoid blocking
+            if (file.Name == "." || file.Name == "..")
+            {
+                continue;
+            }
+
+            if (file.IsDirectory && recursive)
+            {
+                await foreach (var subFile in ListFolderAsync(file.FullName, cancellationToken, filter, recursive))
+                {
+                    yield return subFile;
+                }
+            }
+            else if (!file.IsDirectory)
+            {
+                var metadata = new FileMetadata
+                {
+                    Path = file.FullName,
+                    Size = file.Length,
+                    LastModified = file.LastWriteTime,
+                    Extension= Path.GetExtension(file.FullName)
+                };
+
+                if (filter == null || filter(metadata))
+                {
+                    yield return metadata;
+                }
+
+                await Task.Yield();
+            }
         }
     }
 
-    public void Dispose()
+    public async ValueTask DisposeAsync()
     {
         if (_client != null)
         {
-            _client.Disconnect();
+            if (_client.IsConnected)
+            {
+                // S'il existe DisconnectAsync, utilisez-le, sinon synchro:
+                //await _client.DisconnectAsync();
+
+                await Task.Run(() => _client.Disconnect());
+            }
             _client.Dispose();
             _client = null;
         }

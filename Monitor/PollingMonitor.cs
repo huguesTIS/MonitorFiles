@@ -1,30 +1,34 @@
 ﻿namespace Watch2sftp.Core.Monitor;
 
-public class PollingMonitor : IMonitor
+public class PollingMonitor : IMonitor, IDisposable
 {
-    private readonly FileSystemHandlerFactory _fileSystemHandlerFactory;
+    private readonly IFileSystemHandler _fileSystemHandler;
     private readonly IEventQueue _eventQueue;
-    private readonly PreJobTask _preJobTask;
     private readonly TimeSpan _pollInterval;
     private readonly ILogger _logger;
-    private readonly Dictionary<string, FileMetadata> _previousFiles; // Cache légère pour stocker les métadonnées des fichiers
-
+    private readonly FileProcessingContext _context;
+    private readonly Dictionary<string, FileMetadata> _previousFiles;
     private CancellationTokenSource? _cancellationTokenSource;
 
-    public PollingMonitor(FileSystemHandlerFactory fileSystemHandlerFactory, IEventQueue eventQueue, PreJobTask preJobTask, TimeSpan pollInterval, ILogger logger)
+    public PollingMonitor(
+        FileProcessingContext context,
+        IFileSystemHandler fileSystemHandler,    // On passe le handler directement
+        IEventQueue eventQueue,
+        TimeSpan pollInterval,
+        ILogger logger)
     {
-        _fileSystemHandlerFactory = fileSystemHandlerFactory;
-        _eventQueue = eventQueue;
-        _preJobTask = preJobTask;
+        _context = context ?? throw new ArgumentNullException(nameof(context));
+        _fileSystemHandler = fileSystemHandler ?? throw new ArgumentNullException(nameof(fileSystemHandler));
+        _eventQueue = eventQueue ?? throw new ArgumentNullException(nameof(eventQueue));
         _pollInterval = pollInterval;
-        _logger = logger;
+        _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         _previousFiles = new Dictionary<string, FileMetadata>();
     }
 
     public async Task StartAsync(CancellationToken stoppingToken)
     {
         _cancellationTokenSource = CancellationTokenSource.CreateLinkedTokenSource(stoppingToken);
-        _logger.LogInformation($"PollingMonitor started for source: {_preJobTask.SourcePath}");
+        _logger.LogInformation($"PollingMonitor started for source: {_context.Source.Path}");
 
         while (!_cancellationTokenSource.Token.IsCancellationRequested)
         {
@@ -43,58 +47,55 @@ public class PollingMonitor : IMonitor
 
     private async Task PollAndQueueEventsAsync(CancellationToken cancellationToken)
     {
-        var sourcecon = ConnectionStringParser.Parse(_preJobTask.SourcePath);
-        var sourceHandler = _fileSystemHandlerFactory.CreateHandler(sourcecon);
-        var currentFiles = await sourceHandler.ListFolderAsync(sourcecon.Path, cancellationToken);
+        var currentFilesDict = new Dictionary<string, FileMetadata>();
 
-        var currentFilesDict = currentFiles.ToDictionary(f => f.Path, f => f);
-
-        // Detect new or modified files
-        foreach (var currentFile in currentFiles)
+        // On utilise ici le handler injecté, qui peut être de type SFTP, local, SMB, etc.
+        await foreach (var file in _fileSystemHandler.ListFolderAsync(_context.Source.Path, cancellationToken))
         {
-            if (!_previousFiles.TryGetValue(currentFile.Path, out var previousFile))
+            currentFilesDict[file.Path] = file;
+
+            if (!_previousFiles.TryGetValue(file.Path, out var previousFile))
             {
-                // Nouveau fichier
-                _logger.LogInformation($"New file detected: {currentFile.Path}");
-                await _eventQueue.EnqueueAsync(new FileEvent(currentFile.Path, DateTime.Now, "Created", new FileProcessingContext(sourcecon, null, MonitorMode.Copy, "*", 3, 1000)), cancellationToken);
+                _logger.LogInformation($"New file detected: {file.Path}");
+                await _eventQueue.EnqueueAsync(
+                    new FileEvent(file.Path, DateTime.Now, WatcherChangeTypes.Created.ToString(), _context),
+                    cancellationToken);
             }
-            else if (previousFile.LastModified < currentFile.LastModified)
+            else if (previousFile.LastModified < file.LastModified)
             {
-                // Fichier modifié
-                _logger.LogInformation($"Modified file detected: {currentFile.Path}");
-                await _eventQueue.EnqueueAsync(new FileEvent(currentFile.Path, DateTime.Now, "Modified", new FileProcessingContext(sourcecon, null, MonitorMode.Copy, "*", 3, 1000)), cancellationToken);
+                _logger.LogInformation($"Modified file detected: {file.Path}");
+                await _eventQueue.EnqueueAsync(
+                    new FileEvent(file.Path, DateTime.Now, WatcherChangeTypes.Changed.ToString(), _context),
+                    cancellationToken);
             }
         }
 
-        // Detect deleted files
-        foreach (var previousFile in _previousFiles.Keys)
+        foreach (var previousFile in _previousFiles.Keys.Except(currentFilesDict.Keys))
         {
-            if (!currentFilesDict.ContainsKey(previousFile))
-            {
-                // Fichier supprimé
-                _logger.LogInformation($"Deleted file detected: {previousFile}");
-                await _eventQueue.EnqueueAsync(new FileEvent(previousFile, DateTime.Now, "Deleted", new FileProcessingContext(sourcecon, null, MonitorMode.Copy, "*", 3, 1000)), cancellationToken);
-            }
+            _logger.LogInformation($"Deleted file detected: {previousFile}");
+            await _eventQueue.EnqueueAsync(
+                new FileEvent(previousFile, DateTime.Now, WatcherChangeTypes.Deleted.ToString(), _context),
+                cancellationToken);
         }
 
-        // Mise à jour de la cache
         _previousFiles.Clear();
-        foreach (var currentFile in currentFiles)
+        foreach (var kvp in currentFilesDict)
         {
-            _previousFiles[currentFile.Path] = currentFile;
+            _previousFiles[kvp.Key] = kvp.Value;
         }
     }
 
     public async Task StopAsync(CancellationToken cancellationToken)
     {
         _cancellationTokenSource?.Cancel();
-        _logger.LogInformation($"PollingMonitor stopped for source: {_preJobTask.SourcePath}");
+        _logger.LogInformation($"PollingMonitor stopped for source: {_context.Source.Path}");
         await Task.CompletedTask;
     }
 
     public Task<bool> IsConnectedAsync()
     {
-        // Polling monitor is always "connected" for a local path scenario
+        // On peut tenter un ExistsAsync sur le répertoire source, par exemple,
+        // ou considérer qu'il est connecté tant que le polling ne lève pas d'exception.
         return Task.FromResult(true);
     }
 
@@ -102,5 +103,16 @@ public class PollingMonitor : IMonitor
     {
         _cancellationTokenSource?.Cancel();
         _cancellationTokenSource?.Dispose();
+    }
+}
+
+// Extension pour convertir PreJobTask en FileProcessingContext, par exemple
+public static class PreJobTaskExtensions
+{
+    public static FileProcessingContext ToFileProcessingContext(this PreJobTask task)
+    {
+        var sourceCon = ConnectionStringParser.Parse(task.SourcePath);
+        // Selon la logique métier, vous pouvez remplir ce contexte comme nécessaire
+        return new FileProcessingContext(sourceCon, null, MonitorMode.Copy, "*", 3, 1000);
     }
 }
